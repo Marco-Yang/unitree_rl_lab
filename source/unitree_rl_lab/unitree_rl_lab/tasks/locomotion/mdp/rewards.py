@@ -223,3 +223,304 @@ def joint_mirror(env: ManagerBasedRLEnv, asset_cfg: SceneEntityCfg, mirror_joint
         )
     reward *= 1 / len(mirror_joints) if len(mirror_joints) > 0 else 0
     return reward
+
+
+"""
+Pose tracking rewards (for roll, pitch, height commands).
+"""
+
+
+def track_roll_exp(
+    env: ManagerBasedRLEnv, 
+    command_name: str, 
+    std: float, 
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Reward tracking roll angle command using exponential kernel.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        std: Standard deviation for exponential kernel.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Reward tensor of shape (num_envs,).
+    """
+    # extract the used quantities
+    asset: RigidObject = env.scene[asset_cfg.name]
+    
+    # get commanded roll angle
+    pose_command = env.command_manager.get_command(command_name)
+    commanded_roll = pose_command[:, 0]  # roll is first element
+    
+    # get current roll from projected gravity
+    # projected_gravity_b is gravity vector in body frame
+    gravity_proj = asset.data.projected_gravity_b
+    current_roll = torch.atan2(gravity_proj[:, 0], gravity_proj[:, 2])
+    
+    # compute error
+    roll_error = torch.square(current_roll - commanded_roll)
+    
+    # exponential reward
+    return torch.exp(-roll_error / (2 * std**2))
+
+
+def track_pitch_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Reward tracking pitch angle command using exponential kernel.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        std: Standard deviation for exponential kernel.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Reward tensor of shape (num_envs,).
+    """
+    # extract the used quantities
+    asset: RigidObject = env.scene[asset_cfg.name]
+    
+    # get commanded pitch angle  
+    pose_command = env.command_manager.get_command(command_name)
+    commanded_pitch = pose_command[:, 1]  # pitch is second element
+    
+    # get current pitch from projected gravity
+    gravity_proj = asset.data.projected_gravity_b
+    current_pitch = torch.atan2(gravity_proj[:, 1], gravity_proj[:, 2])
+    
+    # compute error
+    pitch_error = torch.square(current_pitch - commanded_pitch)
+    
+    # exponential reward
+    return torch.exp(-pitch_error / (2 * std**2))
+
+
+def track_height_exp(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    std: float,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Reward tracking height command using exponential kernel.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        std: Standard deviation for exponential kernel.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Reward tensor of shape (num_envs,).
+    """
+    # extract the used quantities
+    asset: RigidObject = env.scene[asset_cfg.name]
+    
+    # get commanded height
+    pose_command = env.command_manager.get_command(command_name)
+    commanded_height = pose_command[:, 2]  # height is third element
+    
+    # get current height (z position in world frame)
+    current_height = asset.data.root_pos_w[:, 2]
+    
+    # compute error
+    height_error = torch.square(current_height - commanded_height)
+    
+    # exponential reward
+    return torch.exp(-height_error / (2 * std**2))
+
+
+def track_roll_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize roll angle tracking error using L2 norm.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Penalty tensor of shape (num_envs,).
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    pose_command = env.command_manager.get_command(command_name)
+    commanded_roll = pose_command[:, 0]
+    gravity_proj = asset.data.projected_gravity_b
+    current_roll = torch.atan2(gravity_proj[:, 0], gravity_proj[:, 2])
+    return torch.square(current_roll - commanded_roll)
+
+
+def track_pitch_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize pitch angle tracking error using L2 norm.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Penalty tensor of shape (num_envs,).
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    pose_command = env.command_manager.get_command(command_name)
+    commanded_pitch = pose_command[:, 1]
+    gravity_proj = asset.data.projected_gravity_b
+    current_pitch = torch.atan2(gravity_proj[:, 1], gravity_proj[:, 2])
+    return torch.square(current_pitch - commanded_pitch)
+
+
+def track_height_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize height tracking error using L2 norm.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Penalty tensor of shape (num_envs,).
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    pose_command = env.command_manager.get_command(command_name)
+    commanded_height = pose_command[:, 2]
+    current_height = asset.data.root_pos_w[:, 2]
+    return torch.square(current_height - commanded_height)
+
+
+def lin_vel_z_l2_when_stable(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    threshold: float = 0.02,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize vertical linear velocity (z) only when height command is stable.
+    
+    This allows the robot to freely adjust height when commanded, but penalizes
+    unnecessary vertical motion when the height command is stable.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        threshold: Height command change threshold (m). Below this, velocity is penalized.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Penalty tensor of shape (num_envs,).
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    pose_command = env.command_manager.get_command(command_name)
+    
+    # Track height command changes (pose_command[:, 2] is height)
+    if not hasattr(env.command_manager, "_last_height_command"):
+        env.command_manager._last_height_command = pose_command[:, 2].clone()
+    
+    height_change = torch.abs(pose_command[:, 2] - env.command_manager._last_height_command)
+    env.command_manager._last_height_command = pose_command[:, 2].clone()
+    
+    # Only penalize when height command is stable
+    is_stable = height_change < threshold
+    
+    # Compute vertical velocity penalty
+    lin_vel_z_penalty = torch.square(asset.data.root_lin_vel_w[:, 2])
+    
+    return lin_vel_z_penalty * is_stable.float()
+
+
+def ang_vel_xy_l2_when_stable(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    threshold: float = 0.05,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize roll/pitch angular velocity only when orientation command is stable.
+    
+    This allows the robot to freely adjust orientation when commanded, but penalizes
+    unnecessary angular motion when the orientation command is stable.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        threshold: Orientation command change threshold (rad). Below this, velocity is penalized.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Penalty tensor of shape (num_envs,).
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    pose_command = env.command_manager.get_command(command_name)
+    
+    # Track orientation command changes (pose_command[:, :2] is roll, pitch)
+    if not hasattr(env.command_manager, "_last_orientation_command"):
+        env.command_manager._last_orientation_command = pose_command[:, :2].clone()
+    
+    orientation_change = torch.norm(pose_command[:, :2] - env.command_manager._last_orientation_command, dim=1)
+    env.command_manager._last_orientation_command = pose_command[:, :2].clone()
+    
+    # Only penalize when orientation command is stable
+    is_stable = orientation_change < threshold
+    
+    # Compute roll/pitch angular velocity penalty
+    ang_vel_xy_penalty = torch.sum(torch.square(asset.data.root_ang_vel_w[:, :2]), dim=1)
+    
+    return ang_vel_xy_penalty * is_stable.float()
+
+
+def commanded_orientation_l2(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot")
+) -> torch.Tensor:
+    """Penalize deviation from commanded orientation (roll, pitch).
+    
+    This is analogous to flat_orientation_l2 but tracks commanded orientation
+    instead of always enforcing horizontal (flat) orientation.
+    
+    Args:
+        env: The environment.
+        command_name: Name of the pose command.
+        asset_cfg: Robot asset configuration.
+    
+    Returns:
+        Penalty tensor of shape (num_envs,).
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    pose_command = env.command_manager.get_command(command_name)
+    
+    # Extract projected gravity (gives current orientation)
+    # projected_gravity = R^T * [0, 0, -1] in base frame
+    gravity_vec = torch.tensor([0.0, 0.0, -1.0], device=asset.data.root_quat_w.device).repeat(env.num_envs, 1)
+    gravity_proj = quat_apply_inverse(asset.data.root_quat_w, gravity_vec)
+    
+    # Current orientation from projected gravity
+    # For roll: rotation around x-axis affects y and z components
+    # For pitch: rotation around y-axis affects x and z components
+    current_roll = torch.atan2(gravity_proj[:, 1], gravity_proj[:, 2])   # roll from y,z
+    current_pitch = torch.atan2(-gravity_proj[:, 0], gravity_proj[:, 2])  # pitch from x,z (negated)
+    
+    # Commanded orientation
+    commanded_roll = pose_command[:, 0]
+    commanded_pitch = pose_command[:, 1]
+    
+    # Compute penalty (similar to flat_orientation_l2 logic)
+    # For flat orientation: penalty = 1 - |gravity_z|
+    # For commanded orientation: penalty based on angle difference
+    roll_error = torch.square(current_roll - commanded_roll)
+    pitch_error = torch.square(current_pitch - commanded_pitch)
+    
+    return roll_error + pitch_error
