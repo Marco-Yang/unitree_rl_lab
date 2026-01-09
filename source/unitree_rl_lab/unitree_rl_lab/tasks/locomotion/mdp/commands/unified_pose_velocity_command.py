@@ -198,26 +198,59 @@ class UnifiedPoseVelocityCommand(CommandTerm):
         """Callback for debug visualization."""
         # Get robot base position
         base_pos_w = self.robot.data.root_pos_w.clone()
-        base_pos_w[:, 2] = 0.05  # Slightly above ground
+        base_pos_w[:, 2] += 0.5  # Raise above robot
         
-        # Visualize velocity command
-        vel_command_arrow = torch.zeros(self._env.num_envs, 3, device=self._env.device)
-        vel_command_arrow[:, :2] = self.pose_command_w[:, :2]  # xy velocity
-        
-        # Visualize current velocity
-        vel_current_arrow = torch.zeros(self._env.num_envs, 3, device=self._env.device)
-        vel_current_arrow[:, :2] = self.robot.data.root_lin_vel_w[:, :2]
+        # Convert velocity commands to arrow quaternions and scales
+        vel_des_arrow_scale, vel_des_arrow_quat = self._resolve_xy_velocity_to_arrow(
+            self.pose_command_w[:, :2]
+        )
+        vel_arrow_scale, vel_arrow_quat = self._resolve_xy_velocity_to_arrow(
+            self.robot.data.root_lin_vel_b[:, :2]
+        )
         
         # Visualize commanded height
         height_pos = base_pos_w.clone()
         height_pos[:, 2] = self.pose_command_w[:, 5]  # Commanded height
-        height_arrow = torch.zeros(self._env.num_envs, 3, device=self._env.device)
-        height_arrow[:, 2] = 0.1  # Small upward arrow
+        height_arrow_scale = torch.tensor([0.02, 0.02, 0.1], device=self._env.device).repeat(
+            self._env.num_envs, 1
+        )
+        # Identity quaternion (no rotation for vertical arrow)
+        height_arrow_quat = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self._env.device).repeat(
+            self._env.num_envs, 1
+        )
         
         # Update markers
-        self.arrow_goal_visualizer.visualize(base_pos_w, vel_command_arrow)
-        self.arrow_current_visualizer.visualize(base_pos_w, vel_current_arrow)
-        self.height_goal_visualizer.visualize(height_pos, height_arrow)
+        self.arrow_goal_visualizer.visualize(base_pos_w, vel_des_arrow_quat, vel_des_arrow_scale)
+        self.arrow_current_visualizer.visualize(base_pos_w, vel_arrow_quat, vel_arrow_scale)
+        self.height_goal_visualizer.visualize(height_pos, height_arrow_quat, height_arrow_scale)
+
+    def _resolve_xy_velocity_to_arrow(
+        self, xy_velocity: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Converts the XY base velocity command to arrow direction rotation.
+        
+        Args:
+            xy_velocity: The XY velocity command in base frame, shape (num_envs, 2).
+            
+        Returns:
+            A tuple of (arrow_scale, arrow_quat) where:
+            - arrow_scale: Scale of the arrow marker, shape (num_envs, 3)
+            - arrow_quat: Quaternion rotation of the arrow in world frame, shape (num_envs, 4)
+        """
+        # Obtain default scale of the marker
+        default_scale = self.arrow_goal_visualizer.cfg.markers["arrow"].scale
+        # Arrow scale
+        arrow_scale = torch.tensor(default_scale, device=self.device).repeat(xy_velocity.shape[0], 1)
+        arrow_scale[:, 0] *= torch.linalg.norm(xy_velocity, dim=1) * 3.0
+        # Arrow direction (rotation around Z axis based on velocity direction)
+        heading_angle = torch.atan2(xy_velocity[:, 1], xy_velocity[:, 0])
+        zeros = torch.zeros_like(heading_angle)
+        arrow_quat = math_utils.quat_from_euler_xyz(zeros, zeros, heading_angle)
+        # Convert from base frame to world frame
+        base_quat_w = self.robot.data.root_quat_w
+        arrow_quat = math_utils.quat_mul(base_quat_w, arrow_quat)
+        
+        return arrow_scale, arrow_quat
 
 
 @configclass

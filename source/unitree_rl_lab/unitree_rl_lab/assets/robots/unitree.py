@@ -17,15 +17,15 @@ from isaaclab.utils import configclass
 
 from unitree_rl_lab.assets.robots import unitree_actuators
 
-UNITREE_MODEL_DIR = "/home/yzy/MyProject/unitree_rl_lab/unitree_model"  # Replace with the actual path to your unitree_model directory
-UNITREE_ROS_DIR = "/home/yzy/MyProject/unitree_rl_lab/unitree_ros"  # Replace with the actual path to your unitree_ros package
+UNITREE_MODEL_DIR = "/home/adam/unitree_rl_lab/unitree_model"  # Replace with the actual path to your unitree_model directory
+UNITREE_ROS_DIR = "/home/adam/unitree_rl_lab/unitree_ros"  # Replace with the actual path to your unitree_ros package
 
 
 @configclass
 class UnitreeArticulationCfg(ArticulationCfg):
     """Configuration for Unitree articulations."""
 
-    joint_sdk_names: list[str] = None
+    joint_sdk_names: list[str] | None = None
 
     soft_joint_pos_limit_factor = 0.9
 

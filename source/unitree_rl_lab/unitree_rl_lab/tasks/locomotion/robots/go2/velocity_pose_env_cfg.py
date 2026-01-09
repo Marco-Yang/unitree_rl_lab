@@ -413,3 +413,23 @@ class RobotVelocityPoseEnvCfg(ManagerBasedRLEnvCfg):
         # update sensor update periods
         self.scene.contact_forces.update_period = self.sim.dt
         self.scene.height_scanner.update_period = self.decimation * self.sim.dt
+
+
+class RobotVelocityPosePlayEnvCfg(RobotVelocityPoseEnvCfg):
+    """Configuration for playing/inference with the Go2 velocity & pose control environment."""
+    
+    def __post_init__(self):
+        super().__post_init__()
+        # Reduce number of environments for play
+        self.scene.num_envs = 32
+        # Simplify terrain for visualization
+        self.scene.terrain.terrain_generator.num_rows = 2
+        self.scene.terrain.terrain_generator.num_cols = 1
+        # Override command ranges with reasonable limits for play mode
+        # Use full command ranges for better visualization and testing
+        self.commands.pose_command.ranges.lin_vel_x = (-1.0, 1.0)
+        self.commands.pose_command.ranges.lin_vel_y = (-0.4, 0.4)
+        self.commands.pose_command.ranges.ang_vel_z = (-1.0, 1.0)
+        self.commands.pose_command.ranges.roll = (-0.2, 0.2)
+        self.commands.pose_command.ranges.pitch = (-0.2, 0.2)
+        self.commands.pose_command.ranges.height = (0.25, 0.45)
