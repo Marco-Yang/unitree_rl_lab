@@ -413,3 +413,26 @@ class RobotVelocityPoseEnvCfg(ManagerBasedRLEnvCfg):
         # update sensor update periods
         self.scene.contact_forces.update_period = self.sim.dt
         self.scene.height_scanner.update_period = self.decimation * self.sim.dt
+
+
+@configclass
+class RobotVelocityPoseEnvCfg_PLAY(RobotVelocityPoseEnvCfg):
+    """Configuration for playing the trained Go2 velocity + pose policy."""
+    
+    def __post_init__(self):
+        # post init of parent
+        super().__post_init__()
+        
+        # make a smaller scene for play
+        self.scene.num_envs = 16
+        self.scene.env_spacing = 2.5
+        
+        # spawn the robot randomly in the grid (instead of their terrain levels)
+        self.scene.terrain.max_init_terrain_level = None
+        
+        # disable randomization for play
+        self.observations.policy.enable_corruption = False
+        
+        # remove random pushing event
+        self.events.base_external_force_torque = None
+        self.events.push_robot = None

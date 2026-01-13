@@ -200,24 +200,32 @@ class UnifiedPoseVelocityCommand(CommandTerm):
         base_pos_w = self.robot.data.root_pos_w.clone()
         base_pos_w[:, 2] = 0.05  # Slightly above ground
         
-        # Visualize velocity command
-        vel_command_arrow = torch.zeros(self._env.num_envs, 3, device=self._env.device)
-        vel_command_arrow[:, :2] = self.pose_command_w[:, :2]  # xy velocity
+        # Compute orientation from velocity command (convert 3D vector to quaternion)
+        vel_command_vec = torch.zeros(self._env.num_envs, 3, device=self._env.device)
+        vel_command_vec[:, :2] = self.pose_command_w[:, :2]  # xy velocity
+        vel_command_quat = math_utils.quat_from_angle_axis(
+            torch.atan2(vel_command_vec[:, 1], vel_command_vec[:, 0]),
+            torch.tensor([0.0, 0.0, 1.0], device=self._env.device).repeat(self._env.num_envs, 1)
+        )
         
-        # Visualize current velocity
-        vel_current_arrow = torch.zeros(self._env.num_envs, 3, device=self._env.device)
-        vel_current_arrow[:, :2] = self.robot.data.root_lin_vel_w[:, :2]
+        # Compute orientation from current velocity
+        vel_current_vec = torch.zeros(self._env.num_envs, 3, device=self._env.device)
+        vel_current_vec[:, :2] = self.robot.data.root_lin_vel_w[:, :2]
+        vel_current_quat = math_utils.quat_from_angle_axis(
+            torch.atan2(vel_current_vec[:, 1], vel_current_vec[:, 0]),
+            torch.tensor([0.0, 0.0, 1.0], device=self._env.device).repeat(self._env.num_envs, 1)
+        )
         
         # Visualize commanded height
         height_pos = base_pos_w.clone()
         height_pos[:, 2] = self.pose_command_w[:, 5]  # Commanded height
-        height_arrow = torch.zeros(self._env.num_envs, 3, device=self._env.device)
-        height_arrow[:, 2] = 0.1  # Small upward arrow
+        # Identity quaternion for vertical marker
+        height_quat = torch.tensor([1.0, 0.0, 0.0, 0.0], device=self._env.device).repeat(self._env.num_envs, 1)
         
         # Update markers
-        self.arrow_goal_visualizer.visualize(base_pos_w, vel_command_arrow)
-        self.arrow_current_visualizer.visualize(base_pos_w, vel_current_arrow)
-        self.height_goal_visualizer.visualize(height_pos, height_arrow)
+        self.arrow_goal_visualizer.visualize(base_pos_w, vel_command_quat)
+        self.arrow_current_visualizer.visualize(base_pos_w, vel_current_quat)
+        self.height_goal_visualizer.visualize(height_pos, height_quat)
 
 
 @configclass
